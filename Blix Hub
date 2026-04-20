@@ -2537,8 +2537,9 @@ end)
 -- TRUCK DUPE
 -- ============================================================
 sDupe:Label("== TRUCK DUPE ==")
-sDupe:Label("Dupes wood loaded on your truck to receiver's base")
-sDupe:Label("1) Set Giver = account WITH the truck/wood")
+sDupe:Label("Dupes ALL items loaded on your truck to receiver's base")
+sDupe:Label("Works with wood, sawmills, plots, blueprints & more")
+sDupe:Label("1) Set Giver = account WITH the truck/items")
 sDupe:Label("2) Set Receiver = account TO send to")
 sDupe:Label("3) Sit IN the truck, then press Dupe Truck")
 
@@ -2612,21 +2613,19 @@ sDupe:Button("► Dupe Truck", function()
             if p:IsA("BasePart") then ignoredParts[p] = true end
         end
 
-        -- Find wood sitting on/in the truck bounding box
+        -- Find ALL items sitting on/in the truck bounding box (wood, sawmills, plots, blueprints, etc.)
         for _,p in pairs(workspace:GetDescendants()) do
-            if p:IsA("BasePart") and not ignoredParts[p] then
-                if p.Name == "Main" or p.Name == "WoodSection" then
-                    if isPointInsideTruck(p.Position, modelCF, modelSize) then
-                        local pCF     = p.CFrame
-                        local newPos  = pCF.Position - GiveBaseOrigin.Position + ReceiverBaseOrigin.Position
-                        local offset  = CFrame.new(newPos) * pCF.Rotation
-                        table.insert(teleportedParts, {Instance=p, OldPos=p.Position, TargetCFrame=offset})
-                    end
+            if p:IsA("BasePart") and not ignoredParts[p] and not p.Anchored then
+                if isPointInsideTruck(p.Position, modelCF, modelSize) then
+                    local pCF    = p.CFrame
+                    local newPos = pCF.Position - GiveBaseOrigin.Position + ReceiverBaseOrigin.Position
+                    local offset = CFrame.new(newPos) * pCF.Rotation
+                    table.insert(teleportedParts, {Instance=p, OldPos=p.Position, TargetCFrame=offset})
                 end
             end
         end
 
-        Notify("Blix Hub","Found "..#teleportedParts.." piece(s). Moving truck...",2)
+        Notify("Blix Hub","Found "..#teleportedParts.." item(s). Moving truck...",2)
 
         -- Move truck
         truck:SetPrimaryPartCFrame(truckOffset)
@@ -2659,7 +2658,7 @@ sDupe:Button("► Dupe Truck", function()
             end
         end
         if #retries > 0 then
-            Notify("Blix Hub","Retrying "..#retries.." stubborn piece(s)...",2)
+            Notify("Blix Hub","Retrying "..#retries.." stubborn item(s)...",2)
             for _,data in pairs(retries) do
                 pcall(function() char.HumanoidRootPart.CFrame = data.Instance.CFrame end)
                 task.wait(0.1)
