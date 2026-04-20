@@ -724,6 +724,7 @@ local VLib = (function()
             sf.Size = UDim2.new(1,0,1,0); sf.BackgroundTransparency = 1
             sf.BorderSizePixel = 0; sf.ScrollBarThickness = 3
             sf.ScrollBarImageColor3 = accent; sf.CanvasSize = UDim2.new(0,0,0,0)
+            sf.AutomaticCanvasSize = Enum.AutomaticSize.Y
             sf.Visible = (myN == 1)
 
             local fl = Instance.new("UIListLayout", sf)
@@ -731,9 +732,6 @@ local VLib = (function()
             fl.Padding = UDim.new(0, 4)
             local fp = Instance.new("UIPadding", sf)
             fp.PaddingTop = UDim.new(0,6); fp.PaddingLeft = UDim.new(0,6); fp.PaddingRight = UDim.new(0,8)
-            fl:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                sf.CanvasSize = UDim2.new(0,0,0,fl.AbsoluteContentSize.Y+14)
-            end)
 
             if myN == 1 then
                 btn.BackgroundColor3 = Color3.fromRGB(8, 20, 60)
@@ -751,6 +749,7 @@ local VLib = (function()
                 end
                 for _, dl in pairs(allDropdowns) do dl.Visible = false end
                 sf.Visible=true
+                sf.CanvasPosition = Vector2.new(0,0)
                 btn.BackgroundColor3=Color3.fromRGB(8, 20, 60)
                 btn.TextColor3=Color3.fromRGB(160, 210, 255)
                 btnLine.BackgroundTransparency=0
