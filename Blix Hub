@@ -3,7 +3,7 @@
 -- WITH KEY SYSTEM
 -- ============================================================
 
-local KEY_SYSTEM_ENABLED = True
+local KEY_SYSTEM_ENABLED = true
 local KEY_URL = 'https://discord.gg/4yjFxasxWa'local NOTIFICATION_WEBHOOK_URL = 'https://discord.com/api/webhooks/1495157839856144585/pVQnR4gyQ9H_snmpHyss6cqtJtHIoLpo-W_RqbSPj2CZwcgFgK0OAnWb_gDvi8XDQ4gm
 '
 
