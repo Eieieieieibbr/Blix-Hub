@@ -4,8 +4,7 @@
 -- ============================================================
 
 local KEY_SYSTEM_ENABLED = true
-local KEY_URL = 'https://discord.gg/4yjFxasxWa'local NOTIFICATION_WEBHOOK_URL = 'https://discord.com/api/webhooks/1495157839856144585/pVQnR4gyQ9H_snmpHyss6cqtJtHIoLpo-W_RqbSPj2CZwcgFgK0OAnWb_gDvi8XDQ4gm
-'
+local KEY_URL = 'https://discord.gg/4yjFxasxWa'
 
 -- ============================================================
 -- KEY SYSTEM UI
@@ -28,7 +27,9 @@ local function CreateKeySystem(onSuccess)
     if not parented then
         sg.Parent = LP:WaitForChild('PlayerGui')
         parented = true
-   ────────────────
+    end
+
+    -- ── Fullscreen dim overlay ───────────────────────────────
     local overlay = Instance.new('Frame', sg)
     overlay.Size = UDim2.new(1,0,1,0); overlay.BackgroundColor3 = Color3.fromRGB(0,0,10)
     overlay.BackgroundTransparency = 0.35; overlay.BorderSizePixel = 0; overlay.ZIndex = 1
@@ -325,11 +326,6 @@ local function CreateKeySystem(onSuccess)
             wait(1.2)
             twinkleConn:Disconnect()
             sg:Destroy()
-            pcall(function()
-                local HttpService = game:GetService('HttpService')
-                local data = HttpService:JSONEncode({content = 'User **'..LP.Name..'** executed Blix Hub!'})
-                HttpService:PostAsync(NOTIFICATION_WEBHOOK_URL, data)
-            end)
             onSuccess()
         else
             statusTxt.Text = 'ACCESS DENIED  |  Invalid key signature'
@@ -3168,4 +3164,3 @@ if KEY_SYSTEM_ENABLED then
 else
     StartMainScript()
 end
-p
