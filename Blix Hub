@@ -19,11 +19,16 @@ local function CreateKeySystem(onSuccess)
     sg.Name = 'BlixKeySystem'; sg.ResetOnSpawn = false
     sg.DisplayOrder = 999; sg.IgnoreGuiInset = true
     local parented = false
-    if not parented then pcall(function() sg.Parent = game:GetService('CoreGui'); parented = sg.Parent == game:GetService('CoreGui') end) end
-    if not parented then pcall(function() sg.Parent = gethui(); parented = true end) end
-    if not parented then pcall(function() sg.Parent = LP.PlayerGui; parented = true end) end
-
-    -- ── Fullscreen dim overlay ───────────────────────────────
+    pcall(function()
+        local cg = cloneref and cloneref(game:GetService('CoreGui')) or game:GetService('CoreGui')
+        sg.Parent = cg
+        parented = true
+    end)
+    if not parented then pcall(function() sg.Parent = gethui and gethui() or LP:WaitForChild('PlayerGui'); parented = true end) end
+    if not parented then
+        sg.Parent = LP:WaitForChild('PlayerGui')
+        parented = true
+   ────────────────
     local overlay = Instance.new('Frame', sg)
     overlay.Size = UDim2.new(1,0,1,0); overlay.BackgroundColor3 = Color3.fromRGB(0,0,10)
     overlay.BackgroundTransparency = 0.35; overlay.BorderSizePixel = 0; overlay.ZIndex = 1
@@ -3163,3 +3168,4 @@ if KEY_SYSTEM_ENABLED then
 else
     StartMainScript()
 end
+p
