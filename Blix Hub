@@ -1027,6 +1027,7 @@ local sVehicle   = win:Tab("VEHICLE")
 local sDupe      = win:Tab("DUPE")
 local sTruckLoad = win:Tab("TRUCK LOAD")
 local sPixelArt  = win:Tab("PIXEL ART")
+local sSongs     = win:Tab("SONGS")
 
 -- ============================================================
 -- SERVICES & LOCALS
@@ -2566,154 +2567,109 @@ sDupe:Button("► Dupe Truck", function()
         if not char or not char:FindFirstChild("HumanoidRootPart") then
             Notify("Blix Hub","No character found!",3); return
         end
+        if not char.Humanoid.SeatPart then
+            Notify("Blix Hub","Sit inside your truck first!",3); return
+        end
 
-        -- Find giver and receiver OriginSquares
+        -- Find giver and receiver base OriginSquares
         local GiveBaseOrigin, ReceiverBaseOrigin
         for _,v in pairs(workspace.Properties:GetDescendants()) do
             if v.Name == "Owner" then
-                if tostring(v.Value) == truckDupeGiver   then GiveBaseOrigin     = v.Parent:FindFirstChild("OriginSquare") end
-                if tostring(v.Value) == truckDupeReceiver then ReceiverBaseOrigin = v.Parent:FindFirstChild("OriginSquare") end
+                if tostring(v.Value) == truckDupeGiver then
+                    GiveBaseOrigin = v.Parent:FindFirstChild("OriginSquare")
+                end
+                if tostring(v.Value) == truckDupeReceiver then
+                    ReceiverBaseOrigin = v.Parent:FindFirstChild("OriginSquare")
+                end
             end
         end
-        if not GiveBaseOrigin     then Notify("Blix Hub","Giver base not found!",3); return end
-        if not ReceiverBaseOrigin then Notify("Blix Hub","Receiver base not found!",3); return end
 
+        if not GiveBaseOrigin then
+            Notify("Blix Hub","Giver base not found in this server!",3); return
+        end
+        if not ReceiverBaseOrigin then
+            Notify("Blix Hub","Receiver base not found in this server!",3); return
+        end
+
+        Notify("Blix Hub","Scanning truck for items...",2)
+
+        local truck = char.Humanoid.SeatPart.Parent
+        local truckMain = truck:FindFirstChild("Main")
+        if not truckMain then Notify("Blix Hub","Truck has no Main part!",3); return end
+
+        -- Teleport truck to receiver base
+        local truckCF  = truckMain.CFrame
+        local newTruckPos = truckCF.Position - GiveBaseOrigin.Position + ReceiverBaseOrigin.Position
+        local truckOffset = CFrame.new(newTruckPos) * truckCF.Rotation
+
+        local modelCF, modelSize = truck:GetBoundingBox()
         local teleportedParts = {}
         local ignoredParts    = {}
-        local didTruckTP      = false
-        local truckOffset     = nil
-        local doorHinge       = nil
 
-        local function isPointInside(point, boxCF, boxSize)
-            local rel = boxCF:PointToObjectSpace(point)
-            return math.abs(rel.X) <= boxSize.X / 2
-               and math.abs(rel.Y) <= (boxSize.Y / 2 + 2)
-               and math.abs(rel.Z) <= boxSize.Z / 2
+        -- Build ignore list (truck + character parts)
+        for _,p in pairs(truck:GetDescendants()) do
+            if p:IsA("BasePart") then ignoredParts[p] = true end
+        end
+        for _,p in pairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then ignoredParts[p] = true end
         end
 
-        local function teleportTruck(truck)
-            if didTruckTP then return end
-            local truckMain = truck:FindFirstChild("Main")
-            if not truckMain then return end
-            local cf     = truckMain.CFrame
-            local newPos = cf.Position - GiveBaseOrigin.Position + ReceiverBaseOrigin.Position
-            truckOffset  = CFrame.new(newPos) * cf.Rotation
-            truck:SetPrimaryPartCFrame(truckOffset)
-            didTruckTP = true
-        end
-
-        -- Find the giver's truck in PlayerModels and sit in it
-        for _,v in pairs(workspace.PlayerModels:GetDescendants()) do
-            if v.Name == "Owner" and tostring(v.Value) == truckDupeGiver then
-                if v.Parent:FindFirstChild("DriveSeat") then
-                    local truck = v.Parent
-                    Notify("Blix Hub","Sitting in truck...",2)
-
-                    truck.DriveSeat:Sit(char.Humanoid)
-                    repeat task.wait() truck.DriveSeat:Sit(char.Humanoid) until char.Humanoid.SeatPart
-
-                    local modelCF, modelSize = truck:GetBoundingBox()
-
-                    -- Build ignore list
-                    for _,p in pairs(truck:GetDescendants()) do
-                        if p:IsA("BasePart") then ignoredParts[p] = true end
-                    end
-                    for _,p in pairs(char:GetDescendants()) do
-                        if p:IsA("BasePart") then ignoredParts[p] = true end
-                    end
-
-                    -- Cache DoorHinge for post-TP door open
-                    pcall(function()
-                        doorHinge = truck:FindFirstChild("PaintParts",true)
-                            and truck.PaintParts:FindFirstChild("DoorLeft",true)
-                            and truck.PaintParts.DoorLeft:FindFirstChild("ButtonRemote_Hinge")
-                    end)
-
-                    local sitPart = char.Humanoid.SeatPart
-                    Notify("Blix Hub","Scanning items on truck...",2)
-
-                    -- Spawn a coroutine per Main/WoodSection part on the truck
-                    for _,part in ipairs(workspace:GetDescendants()) do
-                        if part:IsA("BasePart") and not ignoredParts[part]
-                           and (part.Name == "Main" or part.Name == "WoodSection") then
-                            -- Skip items already welded to something else
-                            local weld = part:FindFirstChild("Weld")
-                            if weld and weld.Part1 and weld.Part1.Parent ~= part.Parent then continue end
-
-                            task.spawn(function()
-                                if not isPointInside(part.Position, modelCF, modelSize) then return end
-
-                                -- Teleport truck exactly once
-                                teleportTruck(truck)
-
-                                local oldPos  = part.Position
-                                local pCF     = part.CFrame
-                                local newPos2 = pCF.Position - GiveBaseOrigin.Position + ReceiverBaseOrigin.Position
-                                local target  = CFrame.new(newPos2) * pCF.Rotation
-
-                                part.CFrame = target
-
-                                table.insert(teleportedParts, {
-                                    Instance    = part,
-                                    OldPos      = oldPos,
-                                    TargetCFrame = target,
-                                })
-                            end)
-                        end
-                    end
-
-                    -- Eject from truck and open door
-                    task.wait()
-                    char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-                    task.wait(0.1)
-                    pcall(function() sitPart:Destroy() end)
-                    teleportTruck(truck) -- ensure truck moved even if no items found
-                    didTruckTP = false   -- reset for next truck if loop continues
-
-                    if doorHinge then
-                        for i = 1, 10 do
-                            ReplicatedStorage.Interaction.RemoteProxy:FireServer(doorHinge)
-                        end
-                    end
+        -- Find ALL items sitting on/in the truck bounding box (wood, sawmills, plots, blueprints, etc.)
+        for _,p in pairs(workspace:GetDescendants()) do
+            if p:IsA("BasePart") and not ignoredParts[p] and not p.Anchored then
+                if isPointInsideTruck(p.Position, modelCF, modelSize) then
+                    local pCF    = p.CFrame
+                    local newPos = pCF.Position - GiveBaseOrigin.Position + ReceiverBaseOrigin.Position
+                    local offset = CFrame.new(newPos) * pCF.Rotation
+                    table.insert(teleportedParts, {Instance=p, OldPos=p.Position, TargetCFrame=offset})
                 end
             end
         end
 
-        -- Retry loop: keep nudging items that didn't move far enough
-        Notify("Blix Hub","Waiting for items to settle...",2)
-        task.wait(5)
+        Notify("Blix Hub","Found "..#teleportedParts.." item(s). Moving truck...",2)
 
-        local function doRetry(list)
-            for _,data in ipairs(list) do
+        -- Move truck
+        truck:SetPrimaryPartCFrame(truckOffset)
+        task.wait(0.1)
+        char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        task.wait(0.2)
+
+        -- Move each wood piece
+        for _,data in pairs(teleportedParts) do
+            spawn(function()
                 local item = data.Instance
-                if (char.HumanoidRootPart.Position - item.Position).Magnitude > 25 then
-                    char.HumanoidRootPart.CFrame = item.CFrame
-                    task.wait(0.1)
-                end
-                for i = 1, 50 do
-                    Drag:FireServer(item.Parent)
-                    task.wait(0.05)
-                end
-                item.CFrame = data.TargetCFrame
+                -- TP player close so server accepts drag
+                pcall(function() char.HumanoidRootPart.CFrame = item.CFrame end)
                 task.wait(0.1)
-            end
+                for i = 1, 20 do
+                    Drag:FireServer(item.Parent)
+                    item.CFrame = data.TargetCFrame
+                    task.wait(0)
+                end
+            end)
         end
 
-        repeat
-            task.wait(5)
-            local retries = {}
-            for _,data in ipairs(teleportedParts) do
-                if (data.Instance.Position - data.OldPos).Magnitude < 25 then
-                    table.insert(retries, data)
+        task.wait(3)
+
+        -- Retry any pieces that didn't move far enough
+        local retries = {}
+        for _,data in pairs(teleportedParts) do
+            if (data.Instance.Position - data.OldPos).Magnitude < 10 then
+                table.insert(retries, data)
+            end
+        end
+        if #retries > 0 then
+            Notify("Blix Hub","Retrying "..#retries.." stubborn item(s)...",2)
+            for _,data in pairs(retries) do
+                pcall(function() char.HumanoidRootPart.CFrame = data.Instance.CFrame end)
+                task.wait(0.1)
+                for i = 1, 40 do
+                    Drag:FireServer(data.Instance.Parent)
+                    data.Instance.CFrame = data.TargetCFrame
+                    task.wait(0)
                 end
             end
-            if #retries > 0 then
-                Notify("Blix Hub","Retrying "..#retries.." item(s)...",2)
-                doRetry(retries)
-            else
-                break
-            end
-        until false
+        end
 
         Notify("Blix Hub","Truck Dupe complete!",3)
     end)
@@ -3222,6 +3178,103 @@ sPixelArt:Label("== PALETTE PREVIEW ==")
 sPixelArt:Label("Colors used (nearest BrickColor match):")
 for _,c in ipairs(PA_PALETTE) do
     sPixelArt:Label("  ■ "..c.name.." ("..c.r..","..c.g..","..c.b..")")
+end
+
+-- ============================================================
+-- SONGS TAB
+-- ============================================================
+sSongs:Label("== MUSIC PLAYER ==")
+sSongs:Label("Plays any Roblox audio in-game")
+sSongs:Label("1) Paste a Song ID (numbers only)")
+sSongs:Label("2) Tap Play. Tap Stop to end.")
+sSongs:Label("Find IDs at: create.roblox.com/marketplace/audio")
+
+local songId      = ""
+local songVolume  = 1
+local songLooped  = true
+local currentSong = nil
+
+local function stopSong()
+    if currentSong then
+        pcall(function() currentSong:Stop(); currentSong:Destroy() end)
+        currentSong = nil
+    end
+end
+
+sSongs:Textbox("Song ID", function(v) songId = v end)
+
+sSongs:Slider("Volume", 0, 10, 5, function(v) 
+    songVolume = v / 5
+    if currentSong then pcall(function() currentSong.Volume = songVolume end) end
+end)
+
+sSongs:Toggle("Loop Song", function(v) 
+    songLooped = v
+    if currentSong then pcall(function() currentSong.Looped = songLooped end) end
+end)
+
+sSongs:Button("► Play Song", function()
+    if songId == "" then Notify("Blix Hub","Enter a Song ID first!",2); return end
+    local cleanId = songId:gsub("%D","")
+    if cleanId == "" then Notify("Blix Hub","Invalid ID — numbers only!",2); return end
+    stopSong()
+    local s = Instance.new("Sound")
+    s.Name = "BlixSong"
+    s.SoundId = "rbxassetid://"..cleanId
+    s.Volume = songVolume
+    s.Looped = songLooped
+    s.Parent = workspace
+    currentSong = s
+    pcall(function() s:Play() end)
+    Notify("Blix Hub","Playing song "..cleanId,2)
+end)
+
+sSongs:Button("■ Stop Song", function()
+    stopSong()
+    Notify("Blix Hub","Song stopped",2)
+end)
+
+sSongs:Label("== QUICK PICKS ==")
+local presets = {
+    {name="Juice WRLD - Rental",       id="79085068943611"},
+    {name="Burn",                      id="139286584529874"},
+    {name="Marshmello - Come & Go",    id="86989178148926"},
+    {name="Lucid Dreams",              id="120741970921527"},
+    {name="The Weeknd - Smile",        id="92715776009816"},
+    {name="Back On It",                id="127604237486733"},
+    {name="Rob A Bank OG",             id="98204621209133"},
+    {name="Sleep Paralysis",           id="77110026287418"},
+    {name="Legend Session V2",         id="75913208855144"},
+    {name="Lovely Remix Solo",         id="101049220984601"},
+    {name="I'll Be Fine",              id="88263068974081"},
+    {name="Graduation",                id="97124649529784"},
+    {name="KTM Drip",                  id="89414521850898"},
+    {name="Triple Red",                id="80692873989118"},
+    {name="All Girls Are The Same",    id="7562081362904"},
+    {name="God's Plan",                id="81492019772856"},
+    {name="Slickback",                 id="96006403323116"},
+    {name="King Von",                  id="77390645741227"},
+    {name="Matt Ox",                   id="75644737924449"},
+    {name="Hate Love",                 id="126609537274305"},
+    {name="Phonk - Murder In My Mind", id="6995736534"},
+    {name="Lofi Chill",                id="9046850868"},
+    {name="Sigma Boy",                 id="18632848530"},
+    {name="Skibidi Toilet",            id="14211072797"},
+    {name="Drift Phonk",               id="9039022208"},
+}
+for _,p in ipairs(presets) do
+    sSongs:Button("▶ "..p.name, function()
+        stopSong()
+        local s = Instance.new("Sound")
+        s.Name = "BlixSong"
+        s.SoundId = "rbxassetid://"..p.id
+        s.Volume = songVolume
+        s.Looped = songLooped
+        s.Parent = workspace
+        currentSong = s
+        pcall(function() s:Play() end)
+        Notify("Blix Hub","Playing: "..p.name,2)
+    end)
 end
 
 end -- end StartMainScript
