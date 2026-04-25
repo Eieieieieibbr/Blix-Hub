@@ -1026,7 +1026,7 @@ local sAutoBuy= win:Tab("AUTO BUY")
 local sVehicle   = win:Tab("VEHICLE")
 local sDupe      = win:Tab("DUPE")
 local sTruckLoad = win:Tab("TRUCK LOAD")
-local sPixelArt  = win:Tab("PIXEL ART")
+local sWireArt   = win:Tab("WIRE ART")
 local sSongs     = win:Tab("SONGS")
 
 -- ============================================================
@@ -2534,9 +2534,6 @@ sDupe:Button("► Dupe Structures (Fast)", function()
     end)
 end)
 
--- ============================================================
--- TRUCK DUPE
--- ============================================================
 sDupe:Label("== TRUCK DUPE ==")
 sDupe:Label("Dupes ALL items loaded on your truck to receiver's base")
 sDupe:Label("Works with wood, sawmills, plots, blueprints & more")
@@ -2968,217 +2965,471 @@ sTruckLoad:Toggle("Auto Kill Selected", function(t)
     end)
 end)
 
--- ============================================================
--- PIXEL ART TAB
--- ============================================================
-sPixelArt:Label("== HOW TO USE ==")
-sPixelArt:Label("1) Enter a Roblox Decal/Image asset ID")
-sPixelArt:Label("2) Set grid size (max 64 keeps lag low)")
-sPixelArt:Label("3) Set pixel size in studs (2-4 recommended)")
-sPixelArt:Label("4) Choose Wall or Floor orientation")
-sPixelArt:Label("5) Press Preview then Build")
-sPixelArt:Label("6) Export saves KronHub JSON to file")
+sTruckLoad:Label("== TRUCK DUPE ==")
+sTruckLoad:Label("Dupes ALL items loaded on your truck to receiver's base")
+sTruckLoad:Label("Works with wood, sawmills, plots, blueprints & more")
+sTruckLoad:Label("1) Set Giver = account WITH the truck/items")
+sTruckLoad:Label("2) Set Receiver = account TO send to")
+sTruckLoad:Label("3) Sit IN the truck, then press Dupe Truck")
 
--- LT2 paint palette — closest to Roblox BrickColors LT2 supports
-local PA_PALETTE = {
-    {r=242,g=243,b=243, name="White"},
-    {r=161,g=165,b=162, name="Medium Stone Grey"},
-    {r=106,g=127,b=63,  name="Bright Green"},
-    {r=75, g=151,b=74,  name="Dark Green"},
-    {r=16, g=52, b=166, name="Bright Blue"},
-    {r=13, g=105,b=172, name="Medium Blue"},
-    {r=0,  g=32, b=96,  name="Dark Blue"},
-    {r=196,g=40, b=28,  name="Bright Red"},
-    {r=106,g=14, b=6,   name="Dark Red"},
-    {r=245,g=205,b=47,  name="Bright Yellow"},
-    {r=226,g=155,b=64,  name="Brick Yellow"},
-    {r=218,g=133,b=64,  name="Medium Orange"},
-    {r=255,g=140,b=0,   name="Bright Orange"},
-    {r=232,g=186,b=200, name="Light Pink"},
-    {r=215,g=58, b=154, name="Bright Pink"},
-    {r=102,g=51, b=152, name="Bright Violet"},
-    {r=52, g=43, b=117, name="Dark Violet"},
-    {r=108,g=76, b=45,  name="Brown"},
-    {r=120,g=89, b=61,  name="Medium Brown"},
-    {r=55, g=33, b=0,   name="Dark Brown"},
-    {r=0,  g=0,  b=0,   name="Black"},
-    {r=27, g=42, b=52,  name="Dark Stone Grey"},
+local tlTruckDupeGiver    = ""
+local tlTruckDupeReceiver = ""
+
+sTruckLoad:Textbox("Giver Username", function(v) tlTruckDupeGiver = v end)
+sTruckLoad:Textbox("Receiver Username", function(v) tlTruckDupeReceiver = v end)
+
+local function tlIsPointInsideTruck(point, boxCFrame, boxSize)
+    local rel = boxCFrame:PointToObjectSpace(point)
+    return math.abs(rel.X) <= boxSize.X / 2
+       and math.abs(rel.Y) <= (boxSize.Y / 2 + 2)
+       and math.abs(rel.Z) <= boxSize.Z / 2
+end
+
+sTruckLoad:Button("► Dupe Truck", function()
+    spawn(function()
+        if tlTruckDupeGiver == "" or tlTruckDupeReceiver == "" then
+            Notify("Blix Hub","Set both Giver and Receiver usernames first!",3); return
+        end
+
+        local char = LP.Character
+        if not char or not char:FindFirstChild("HumanoidRootPart") then
+            Notify("Blix Hub","No character found!",3); return
+        end
+        if not char.Humanoid.SeatPart then
+            Notify("Blix Hub","Sit inside your truck first!",3); return
+        end
+
+        -- Find giver and receiver base OriginSquares
+        local GiveBaseOrigin, ReceiverBaseOrigin
+        for _,v in pairs(workspace.Properties:GetDescendants()) do
+            if v.Name == "Owner" then
+                if tostring(v.Value) == tlTruckDupeGiver then
+                    GiveBaseOrigin = v.Parent:FindFirstChild("OriginSquare")
+                end
+                if tostring(v.Value) == tlTruckDupeReceiver then
+                    ReceiverBaseOrigin = v.Parent:FindFirstChild("OriginSquare")
+                end
+            end
+        end
+
+        if not GiveBaseOrigin then
+            Notify("Blix Hub","Giver base not found in this server!",3); return
+        end
+        if not ReceiverBaseOrigin then
+            Notify("Blix Hub","Receiver base not found in this server!",3); return
+        end
+
+        Notify("Blix Hub","Scanning truck for items...",2)
+
+        local truck = char.Humanoid.SeatPart.Parent
+        local truckMain = truck:FindFirstChild("Main")
+        if not truckMain then Notify("Blix Hub","Truck has no Main part!",3); return end
+
+        -- Teleport truck to receiver base
+        local truckCF  = truckMain.CFrame
+        local newTruckPos = truckCF.Position - GiveBaseOrigin.Position + ReceiverBaseOrigin.Position
+        local truckOffset = CFrame.new(newTruckPos) * truckCF.Rotation
+
+        local modelCF, modelSize = truck:GetBoundingBox()
+        local teleportedParts = {}
+        local ignoredParts    = {}
+
+        -- Build ignore list (truck + character parts)
+        for _,p in pairs(truck:GetDescendants()) do
+            if p:IsA("BasePart") then ignoredParts[p] = true end
+        end
+        for _,p in pairs(char:GetDescendants()) do
+            if p:IsA("BasePart") then ignoredParts[p] = true end
+        end
+
+        -- Find ALL items sitting on/in the truck bounding box (wood, sawmills, plots, blueprints, etc.)
+        for _,p in pairs(workspace:GetDescendants()) do
+            if p:IsA("BasePart") and not ignoredParts[p] and not p.Anchored then
+                if tlIsPointInsideTruck(p.Position, modelCF, modelSize) then
+                    local pCF    = p.CFrame
+                    local newPos = pCF.Position - GiveBaseOrigin.Position + ReceiverBaseOrigin.Position
+                    local offset = CFrame.new(newPos) * pCF.Rotation
+                    table.insert(teleportedParts, {Instance=p, OldPos=p.Position, TargetCFrame=offset})
+                end
+            end
+        end
+
+        Notify("Blix Hub","Found "..#teleportedParts.." item(s). Moving truck...",2)
+
+        -- Move truck
+        truck:SetPrimaryPartCFrame(truckOffset)
+        task.wait(0.1)
+        char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+        task.wait(0.2)
+
+        -- Move each wood piece
+        for _,data in pairs(teleportedParts) do
+            spawn(function()
+                local item = data.Instance
+                -- TP player close so server accepts drag
+                pcall(function() char.HumanoidRootPart.CFrame = item.CFrame end)
+                task.wait(0.1)
+                for i = 1, 20 do
+                    Drag:FireServer(item.Parent)
+                    item.CFrame = data.TargetCFrame
+                    task.wait(0)
+                end
+            end)
+        end
+
+        task.wait(3)
+
+        -- Retry any pieces that didn't move far enough
+        local retries = {}
+        for _,data in pairs(teleportedParts) do
+            if (data.Instance.Position - data.OldPos).Magnitude < 10 then
+                table.insert(retries, data)
+            end
+        end
+        if #retries > 0 then
+            Notify("Blix Hub","Retrying "..#retries.." stubborn item(s)...",2)
+            for _,data in pairs(retries) do
+                pcall(function() char.HumanoidRootPart.CFrame = data.Instance.CFrame end)
+                task.wait(0.1)
+                for i = 1, 40 do
+                    Drag:FireServer(data.Instance.Parent)
+                    data.Instance.CFrame = data.TargetCFrame
+                    task.wait(0)
+                end
+            end
+        end
+
+        Notify("Blix Hub","Truck Dupe complete!",3)
+    end)
+end)
+
+-- ============================================================
+-- WIRE ART TAB
+-- ============================================================
+sWireArt:Label("== HOW TO USE ==")
+sWireArt:Label("1) Paste your Vector3 points list (or use default)")
+sWireArt:Label("2) Set scale and step size (smaller = denser line)")
+sWireArt:Label("3) Choose Wall or Floor orientation")
+sWireArt:Label("4) Stand where you want it built, press Set Origin")
+sWireArt:Label("5) Press Build to draw the wire art")
+sWireArt:Label("6) Export saves a JSON of every placement")
+
+-- Default wire-art shape (137 points)
+local WA_DEFAULT_POINTS = {
+    Vector3.new(0, 0, 0),
+    Vector3.new(-0.333007813, -0.615200043, 0),
+    Vector3.new(-0.622924805, -0.975784302, 0),
+    Vector3.new(-1.07434082, -1.35872841, 0),
+    Vector3.new(-1.51171875, -1.59764099, 0),
+    Vector3.new(-2.14331055, -1.86492157, 0),
+    Vector3.new(-2.6751709, -1.94303703, 0),
+    Vector3.new(-3.27429199, -1.98226738, 0),
+    Vector3.new(-11.4069824, -2.00022125, 0),
+    Vector3.new(-12.0701904, -1.85039711, 0),
+    Vector3.new(-12.8792725, -1.63419724, 0),
+    Vector3.new(-13.4191284, -1.30916786, 0),
+    Vector3.new(-13.6712036, -1.1472702, 0),
+    Vector3.new(-14.0421143, -0.676622391, 0),
+    Vector3.new(-14.3849487, -0.229421616, 0),
+    Vector3.new(-14.5608521, 0.325368881, 0),
+    Vector3.new(-14.6032104, 0.880308151, 0),
+    Vector3.new(-14.6311035, 8.65348244, 0),
+    Vector3.new(-14.5485229, 9.25550652, 0),
+    Vector3.new(-14.3259888, 9.97419548, 0),
+    Vector3.new(-13.84198, 10.5687809, 0),
+    Vector3.new(-13.3565063, 11.0205326, 0),
+    Vector3.new(-12.8058472, 11.3028545, 0),
+    Vector3.new(-12.2979736, 11.4885082, 0),
+    Vector3.new(-11.4813843, 11.6199551, 0),
+    Vector3.new(-10.8577271, 11.648798, 0),
+    Vector3.new(-3.02380371, 11.655077, 0),
+    Vector3.new(-2.69952393, 11.6008091, 0),
+    Vector3.new(-2.01611328, 11.4626942, 0),
+    Vector3.new(-1.6293335, 11.2798634, 0),
+    Vector3.new(-1.11151123, 10.9886799, 0),
+    Vector3.new(-0.723693848, 10.6034756, 0),
+    Vector3.new(-0.386779785, 10.2120647, 0),
+    Vector3.new(-0.109191895, 9.82394981, 0),
+    Vector3.new(0.0432739258, 9.39084816, 0),
+    Vector3.new(0.136230469, 8.83648109, 0),
+    Vector3.new(0.151123047, 8.14367104, 0),
+    Vector3.new(0.166809082, 1.39970207, 0),
+    Vector3.new(0.161254883, 0.904930115, 0),
+    Vector3.new(0.0709228516, 0.375829697, 0),
+    Vector3.new(0.00756835938, 0.0871162415, 0),
+    Vector3.new(-1.68701172, 2.16411018, 0),
+    Vector3.new(-2.03222656, 1.89054871, 0),
+    Vector3.new(-2.58380127, 1.74782753, 0),
+    Vector3.new(-3.24700928, 1.63490486, 0),
+    Vector3.new(-3.34851074, 1.34233093, 0),
+    Vector3.new(-3.48272705, 0.967178345, 0),
+    Vector3.new(-3.88470459, 1.01366615, 0),
+    Vector3.new(-4.38885498, 1.11042213, 0),
+    Vector3.new(-4.72491455, 1.09972191, 0),
+    Vector3.new(-5.14898682, 0.979967117, 0),
+    Vector3.new(-5.42333984, 0.815195084, 0),
+    Vector3.new(-5.79199219, 0.593847275, 0),
+    Vector3.new(-6.19049072, 0.331676483, 0),
+    Vector3.new(-6.71325684, 0.125871658, 0),
+    Vector3.new(-7.26190186, 0.116682053, 0),
+    Vector3.new(-7.87567139, 0.20699501, 0),
+    Vector3.new(-8.27124023, 0.360628128, 0),
+    Vector3.new(-8.81994629, 0.685461044, 0),
+    Vector3.new(-9.31201172, 0.9535923, 0),
+    Vector3.new(-9.76446533, 1.07796288, 0),
+    Vector3.new(-10.3052368, 1.0874157, 0),
+    Vector3.new(-10.7547607, 1.00005722, 0),
+    Vector3.new(-11.0419922, 1.01075172, 0),
+    Vector3.new(-11.1217041, 1.35342026, 0),
+    Vector3.new(-11.2410278, 1.70038605, 0),
+    Vector3.new(-11.5651245, 1.69675827, 0),
+    Vector3.new(-12.0814819, 1.8085556, 0),
+    Vector3.new(-12.6043091, 1.99588203, 0),
+    Vector3.new(-12.6745605, 2.27899742, 0),
+    Vector3.new(-12.550415, 2.35837746, 0),
+    Vector3.new(-12.522522, 2.39011574, 0),
+    Vector3.new(-12.664978, 2.28427696, 0),
+    Vector3.new(-12.6729736, 2.12376213, 0),
+    Vector3.new(-12.4775391, 1.95036507, 0),
+    Vector3.new(-12.6570435, 2.10841179, 0),
+    Vector3.new(-12.6791382, 2.27375984, 0),
+    Vector3.new(-12.3700562, 2.36528587, 0),
+    Vector3.new(-12.0301514, 2.44787788, 0),
+    Vector3.new(-11.6428223, 2.64544106, 0),
+    Vector3.new(-11.2054443, 2.9260006, 0),
+    Vector3.new(-10.8848267, 3.25238991, 0),
+    Vector3.new(-10.5602417, 3.6823101, 0),
+    Vector3.new(-10.2861938, 4.04757118, 0),
+    Vector3.new(-10.1878662, 4.34928703, 0),
+    Vector3.new(-10.1865234, 4.53071785, 0),
+    Vector3.new(-10.3551636, 4.72884941, 0),
+    Vector3.new(-10.7589722, 4.87524605, 0),
+    Vector3.new(-11.137207, 5.00212288, 0),
+    Vector3.new(-11.4798584, 5.17639351, 0),
+    Vector3.new(-11.5298462, 5.41920662, 0),
+    Vector3.new(-11.4683838, 5.61020851, 0),
+    Vector3.new(-11.1412964, 5.72574043, 0),
+    Vector3.new(-10.862793, 5.65096474, 0),
+    Vector3.new(-10.4468384, 5.52780342, 0),
+    Vector3.new(-10.1365356, 5.58690453, 0),
+    Vector3.new(-10.111084, 5.9779377, 0),
+    Vector3.new(-10.1425781, 7.22630501, 0),
+    Vector3.new(-10.1174316, 7.65423012, 0),
+    Vector3.new(-9.91040039, 8.01579094, 0),
+    Vector3.new(-9.69006348, 8.46965981, 0),
+    Vector3.new(-9.24987793, 8.89267159, 0),
+    Vector3.new(-8.61499023, 9.28309059, 0),
+    Vector3.new(-8.1171875, 9.41265297, 0),
+    Vector3.new(-7.4432373, 9.50806618, 0),
+    Vector3.new(-6.88330078, 9.53104973, 0),
+    Vector3.new(-6.1574707, 9.36343575, 0),
+    Vector3.new(-5.70245361, 9.20886421, 0),
+    Vector3.new(-5.2255249, 8.89275932, 0),
+    Vector3.new(-4.83868408, 8.47878075, 0),
+    Vector3.new(-4.55725098, 8.12952614, 0),
+    Vector3.new(-4.40631104, 7.79724312, 0),
+    Vector3.new(-4.31329346, 7.37022209, 0),
+    Vector3.new(-4.34313965, 5.62738609, 0),
+    Vector3.new(-4.17822266, 5.56418037, 0),
+    Vector3.new(-3.77685547, 5.57750511, 0),
+    Vector3.new(-3.48907471, 5.66557503, 0),
+    Vector3.new(-3.33026123, 5.7224865, 0),
+    Vector3.new(-3.08081055, 5.61807442, 0),
+    Vector3.new(-2.92785645, 5.44387245, 0),
+    Vector3.new(-3.02557373, 5.12728691, 0),
+    Vector3.new(-3.39794922, 4.97754478, 0),
+    Vector3.new(-3.7387085, 4.89803505, 0),
+    Vector3.new(-4.10498047, 4.72184563, 0),
+    Vector3.new(-4.25054932, 4.49901009, 0),
+    Vector3.new(-4.26263428, 4.25299644, 0),
+    Vector3.new(-4.11688232, 3.96130943, 0),
+    Vector3.new(-3.85980225, 3.62340355, 0),
+    Vector3.new(-3.51947021, 3.21734428, 0),
+    Vector3.new(-3.16156006, 2.84705544, 0),
+    Vector3.new(-2.79455566, 2.65088844, 0),
+    Vector3.new(-2.30938721, 2.40693474, 0),
+    Vector3.new(-1.83441162, 2.32357979, 0),
+    Vector3.new(-1.75140381, 2.27456856, 0),
+    Vector3.new(-1.79425049, 2.11809731, 0),
 }
 
-local function pa_colorDist(r1,g1,b1, r2,g2,b2)
-    return (r1-r2)^2 + (g1-g2)^2 + (b1-b2)^2
+-- Parse a pasted text blob like "Vector3.new(1.2, 3.4, 0), Vector3.new(...)"
+local function wa_parsePoints(text)
+    local pts = {}
+    if not text or text == "" then return pts end
+    for x, y, z in text:gmatch("Vector3%.new%s*%(%s*(%-?%d*%.?%d+)%s*,%s*(%-?%d*%.?%d+)%s*,%s*(%-?%d*%.?%d+)%s*%)") do
+        table.insert(pts, Vector3.new(tonumber(x), tonumber(y), tonumber(z)))
+    end
+    return pts
 end
 
-local function pa_nearestColor(r,g,b)
-    local best, bestDist = PA_PALETTE[1], math.huge
-    for _,c in ipairs(PA_PALETTE) do
-        local d = pa_colorDist(r,g,b, c.r,c.g,c.b)
-        if d < bestDist then bestDist=d; best=c end
-    end
-    return best
-end
-
-local function pa_readImage(assetId, gridW, gridH)
-    local pixels = {}
-    local ok, img = pcall(function()
-        return game:GetService("AssetService"):CreateEditableImageAsync("rbxassetid://"..assetId)
-    end)
-    if not ok or not img then
-        Notify("Blix Hub","Could not load image. Check the asset ID.",3)
-        return nil
-    end
-    local imgW, imgH = img.Size.X, img.Size.Y
-    for py = 0, gridH-1 do
-        pixels[py+1] = {}
-        for px = 0, gridW-1 do
-            local sx = math.floor(px / gridW * imgW)
-            local sy = math.floor(py / gridH * imgH)
-            local c  = img:ReadPixels(Vector2.new(sx,sy), Vector2.new(1,1))
-            -- c is {r,g,b,a} in 0-1 range
-            local r,g,b = math.floor((c[1] or 0)*255), math.floor((c[2] or 0)*255), math.floor((c[3] or 0)*255)
-            local a = c[4] or 1
-            if a < 0.1 then
-                pixels[py+1][px+1] = nil -- transparent = skip
-            else
-                pixels[py+1][px+1] = pa_nearestColor(r,g,b)
-            end
-        end
-    end
-    img:Destroy()
-    return pixels
-end
-
-local function pa_buildWall(pixels, gridW, gridH, pixelStuds, origin, isWall)
-    local PlaceRemote = ReplicatedStorage.PlaceStructure.ClientPlacedStructure
-    local total = 0
-    local placed = 0
-    for py=1,gridH do for px=1,gridW do if pixels[py][px] then total=total+1 end end end
-    Notify("Blix Hub","Building "..total.." pixel(s)...",2)
-    for py=1,gridH do
-        for px=1,gridW do
-            local col = pixels[py][px]
-            if col then
-                local xOff = (px-1)*pixelStuds
-                local yOff = (gridH-py)*pixelStuds
+-- Build a flat list of CFrames stepping along each segment of the path
+local function wa_buildPlacements(points, scale, stepStuds, origin, isWall, closed)
+    local out = {}
+    local nP = #points
+    if nP < 2 then return out end
+    local segs = closed and nP or (nP - 1)
+    for i = 1, segs do
+        local a  = points[i] * scale
+        local b  = points[(i % nP) + 1] * scale
+        local dx = b.X - a.X
+        local dy = b.Y - a.Y
+        local len = math.sqrt(dx*dx + dy*dy)
+        if len > 1e-3 then
+            local steps = math.max(1, math.ceil(len / stepStuds))
+            local angle = math.atan2(dy, dx)
+            for s = 0, steps - 1 do
+                local t  = (s + 0.5) / steps
+                local px = a.X + dx * t
+                local py = a.Y + dy * t
                 local cf
                 if isWall then
-                    -- build on a vertical wall facing you
-                    cf = origin * CFrame.new(xOff, yOff, 0)
+                    -- vertical plane: rotate around Z to align segment along the wall's long edge
+                    cf = origin * CFrame.new(px, py, 0) * CFrame.Angles(0, 0, angle)
                 else
-                    -- build flat on the floor
-                    cf = origin * CFrame.new(xOff, 0, yOff) * CFrame.Angles(-math.pi/2,0,0)
+                    -- floor plane: lay flat then rotate around Y for direction
+                    cf = origin * CFrame.new(px, 0, py) * CFrame.Angles(-math.pi/2, 0, -angle)
                 end
-                pcall(function()
-                    repeat
-                        task.wait(0)
-                        PlaceRemote:FireServer("Wood Wall", cf, LP, nil, nil, true)
-                    until false -- will be broken by server removing the pending model
-                end)
-                placed = placed + 1
-                if placed % 10 == 0 then
-                    Notify("Blix Hub","Placed "..placed.."/"..total,1)
-                end
-                task.wait(0.05)
+                table.insert(out, cf)
             end
         end
+    end
+    return out
+end
+
+local function wa_build(placements, structureName)
+    local PlaceRemote = ReplicatedStorage.PlaceStructure.ClientPlacedStructure
+    local total = #placements
+    Notify("Blix Hub","Building "..total.." wire piece(s)...",2)
+    local placed = 0
+    for _, cf in ipairs(placements) do
+        pcall(function()
+            repeat
+                task.wait(0)
+                PlaceRemote:FireServer(structureName, cf, LP, nil, nil, true)
+            until false -- broken when server clears the pending model
+        end)
+        placed = placed + 1
+        if placed % 10 == 0 then
+            Notify("Blix Hub","Placed "..placed.."/"..total, 1)
+        end
+        task.wait(0.05)
     end
     Notify("Blix Hub","Build complete! "..placed.." pieces placed.",3)
     return placed
 end
 
-local function pa_exportJSON(pixels, gridW, gridH, pixelStuds, origin, isWall)
+local function wa_exportJSON(placements, structureName)
     local entries = {}
-    for py=1,gridH do
-        for px=1,gridW do
-            local col = pixels[py][px]
-            if col then
-                local xOff = (px-1)*pixelStuds
-                local yOff = (gridH-py)*pixelStuds
-                local cf
-                if isWall then
-                    cf = origin * CFrame.new(xOff, yOff, 0)
-                else
-                    cf = origin * CFrame.new(xOff, 0, yOff) * CFrame.Angles(-math.pi/2,0,0)
-                end
-                local p = cf.Position
-                local rx,ry,rz = cf:ToEulerAnglesXYZ()
-                table.insert(entries, string.format(
-                    '{"item":"Wood Wall","x":%.2f,"y":%.2f,"z":%.2f,"rx":%.4f,"ry":%.4f,"rz":%.4f,"r":%d,"g":%d,"b":%d,"color":"%s"}',
-                    p.X,p.Y,p.Z, rx,ry,rz, col.r,col.g,col.b, col.name
-                ))
-            end
-        end
+    for _, cf in ipairs(placements) do
+        local p = cf.Position
+        local rx, ry, rz = cf:ToEulerAnglesXYZ()
+        table.insert(entries, string.format(
+            '{"item":"%s","x":%.2f,"y":%.2f,"z":%.2f,"rx":%.4f,"ry":%.4f,"rz":%.4f}',
+            structureName, p.X, p.Y, p.Z, rx, ry, rz
+        ))
     end
-    local json = '{"version":1,"tool":"BlixHub","type":"PixelArt","structures":[\n'
+    local json = '{"version":1,"tool":"BlixHub","type":"WireArt","structures":[\n'
               .. table.concat(entries, ",\n")
               .. "\n]}"
-    local filename = "BlixHubPixelArt_"..tostring(os.time())..".json"
+    local filename = "BlixHubWireArt_"..tostring(os.time())..".json"
     pcall(function() writefile(filename, json) end)
     Notify("Blix Hub","Exported to "..filename.." ("..#entries.." pieces)",4)
     return filename
 end
 
 -- State
-local pa_assetId   = ""
-local pa_gridW     = 32
-local pa_gridH     = 32
-local pa_pixelSize = 2
-local pa_isWall    = true
-local pa_pixels    = nil
-local pa_origin    = nil
+local wa_points        = WA_DEFAULT_POINTS
+local wa_pointsText    = ""
+local wa_scale         = 1
+local wa_stepStuds     = 2
+local wa_isWall        = true
+local wa_closed        = false
+local wa_structureName = "Wood Wall"
+local wa_origin        = nil
+local wa_placements    = nil
 
-sPixelArt:Label("== SETTINGS ==")
-sPixelArt:Textbox("Image Asset ID", function(v) pa_assetId = v:match("^%s*(.-)%s*$") end)
-sPixelArt:Slider("Grid Width",  8, 64, 32, function(v) pa_gridW = v end)
-sPixelArt:Slider("Grid Height", 8, 64, 32, function(v) pa_gridH = v end)
-sPixelArt:Slider("Pixel Size (studs)", 1, 6, 2, function(v) pa_pixelSize = v end)
-sPixelArt:Toggle("Wall Mode (off = Floor)", function(v) pa_isWall = v end)
-
-sPixelArt:Label("== ACTIONS ==")
-sPixelArt:Button("1) Load & Preview Image", function()
-    spawn(function()
-        if pa_assetId == "" then Notify("Blix Hub","Enter an asset ID first!",3); return end
-        Notify("Blix Hub","Loading image "..pa_assetId.."...",2)
-        pa_pixels = pa_readImage(pa_assetId, pa_gridW, pa_gridH)
-        if not pa_pixels then return end
-        -- Count non-transparent pixels
-        local count = 0
-        for py=1,pa_gridH do for px=1,pa_gridW do if pa_pixels[py][px] then count=count+1 end end end
-        -- Save origin = player position
-        local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
-        pa_origin = hrp and hrp.CFrame or CFrame.new(0,10,0)
-        Notify("Blix Hub","Image loaded! "..count.." pixels ("..pa_gridW.."x"..pa_gridH.."). Origin set to your position. Press Build to place.",4)
-    end)
+sWireArt:Label("== POINTS ==")
+sWireArt:Label("Loaded "..#wa_points.." default point(s). Paste below to override.")
+sWireArt:Textbox("Custom points (Vector3.new(...))", function(v)
+    wa_pointsText = v or ""
+    if wa_pointsText:gsub("%s","") == "" then
+        wa_points = WA_DEFAULT_POINTS
+        Notify("Blix Hub","Reverted to default ("..#wa_points.." points).",2)
+    else
+        local parsed = wa_parsePoints(wa_pointsText)
+        if #parsed >= 2 then
+            wa_points = parsed
+            Notify("Blix Hub","Loaded "..#wa_points.." custom points.",3)
+        else
+            Notify("Blix Hub","Could not parse — keeping previous points.",3)
+        end
+    end
 end)
 
-sPixelArt:Button("2) Build In-Game", function()
-    spawn(function()
-        if not pa_pixels then Notify("Blix Hub","Load an image first!",3); return end
-        if not pa_origin  then Notify("Blix Hub","Origin not set — load image first!",3); return end
-        pa_buildWall(pa_pixels, pa_gridW, pa_gridH, pa_pixelSize, pa_origin, pa_isWall)
-    end)
+sWireArt:Label("== SETTINGS ==")
+sWireArt:Slider("Scale (x10%)", 1, 50, 10, function(v) wa_scale = v / 10 end)
+sWireArt:Slider("Step Size (studs)", 1, 8, 2, function(v) wa_stepStuds = v end)
+sWireArt:Toggle("Wall Mode (off = Floor)", function(v) wa_isWall = v end)
+sWireArt:Toggle("Closed Loop (connect last to first)", function(v) wa_closed = v end)
+sWireArt:Textbox("Structure Name (default Wood Wall)", function(v)
+    v = (v or ""):match("^%s*(.-)%s*$")
+    wa_structureName = (v ~= "" and v) or "Wood Wall"
 end)
 
-sPixelArt:Button("3) Export KronHub JSON", function()
-    spawn(function()
-        if not pa_pixels then Notify("Blix Hub","Load an image first!",3); return end
-        if not pa_origin  then Notify("Blix Hub","Origin not set — load image first!",3); return end
-        pa_exportJSON(pa_pixels, pa_gridW, pa_gridH, pa_pixelSize, pa_origin, pa_isWall)
-    end)
-end)
-
-sPixelArt:Button("Set Origin Here (re-position)", function()
+sWireArt:Label("== ACTIONS ==")
+sWireArt:Button("Set Origin Here", function()
     local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then Notify("Blix Hub","No character!",2); return end
-    pa_origin = hrp.CFrame
-    Notify("Blix Hub","Origin updated to your current position.",2)
+    wa_origin = hrp.CFrame
+    Notify("Blix Hub","Origin set to your current position.",2)
 end)
 
-sPixelArt:Label("== PALETTE PREVIEW ==")
-sPixelArt:Label("Colors used (nearest BrickColor match):")
-for _,c in ipairs(PA_PALETTE) do
-    sPixelArt:Label("  ■ "..c.name.." ("..c.r..","..c.g..","..c.b..")")
-end
+sWireArt:Button("1) Preview (count placements)", function()
+    spawn(function()
+        if not wa_origin then
+            local hrp = LP.Character and LP.Character:FindFirstChild("HumanoidRootPart")
+            wa_origin = hrp and hrp.CFrame or CFrame.new(0,10,0)
+        end
+        wa_placements = wa_buildPlacements(wa_points, wa_scale, wa_stepStuds, wa_origin, wa_isWall, wa_closed)
+        Notify("Blix Hub",("Preview: %d wire pieces from %d points (scale %.1fx, step %d)."):format(
+            #wa_placements, #wa_points, wa_scale, wa_stepStuds), 4)
+    end)
+end)
+
+sWireArt:Button("2) Build In-Game", function()
+    spawn(function()
+        if not wa_origin  then Notify("Blix Hub","Set origin first!",3); return end
+        if not wa_placements or #wa_placements == 0 then
+            wa_placements = wa_buildPlacements(wa_points, wa_scale, wa_stepStuds, wa_origin, wa_isWall, wa_closed)
+        end
+        if #wa_placements == 0 then Notify("Blix Hub","No placements to build!",3); return end
+        wa_build(wa_placements, wa_structureName)
+    end)
+end)
+
+sWireArt:Button("3) Export JSON", function()
+    spawn(function()
+        if not wa_origin  then Notify("Blix Hub","Set origin first!",3); return end
+        if not wa_placements or #wa_placements == 0 then
+            wa_placements = wa_buildPlacements(wa_points, wa_scale, wa_stepStuds, wa_origin, wa_isWall, wa_closed)
+        end
+        if #wa_placements == 0 then Notify("Blix Hub","Nothing to export!",3); return end
+        wa_exportJSON(wa_placements, wa_structureName)
+    end)
+end)
+
+sWireArt:Button("Reset to Default Points", function()
+    wa_points     = WA_DEFAULT_POINTS
+    wa_placements = nil
+    Notify("Blix Hub","Reverted to default ("..#wa_points.." points).",2)
+end)
+
+sWireArt:Label("== TIPS ==")
+sWireArt:Label("• Wall mode draws on a vertical plane in front of you")
+sWireArt:Label("• Floor mode lays the shape flat at your feet")
+sWireArt:Label("• Lower step size = smoother lines but more parts")
+sWireArt:Label("• Use Closed Loop for outline shapes")
 
 -- ============================================================
 -- SONGS TAB
